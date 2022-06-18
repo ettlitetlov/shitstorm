@@ -1,11 +1,14 @@
-use bevy::{prelude::*};
+use bevy::input::mouse::MouseMotion;
+use bevy::prelude::*;
 
 fn main() {
     App::new()
-        .insert_resource(Msaa { samples: 4 })
+        .insert_resource(ClearColor(Color::rgb(0.75, 0.90, 1.0)))
         .add_plugins(DefaultPlugins)
         .add_startup_system(setup)
+        .add_system(bevy::input::system::exit_on_esc_system)
         .add_system(camera_control)
+        .add_system(mouse_motion)
         .run();
 }
 
@@ -34,7 +37,7 @@ fn setup(
 
     // ambient light
     commands.insert_resource(AmbientLight {
-        color: Color::BLUE,
+        color: Color::rgb(0.0, 0.90, 1.0),
         brightness: 0.05,
     });
 
@@ -51,31 +54,58 @@ fn setup(
     });
 
     // camera
-    commands.spawn_bundle(PerspectiveCameraBundle {
-        transform: Transform::from_xyz(-2.0, 2.0, 0.0).looking_at(Vec3::new(0.0,1.0,0.0), Vec3::Y),
-        ..default()
-    })
-    .insert(Camera);
+    commands
+        .spawn_bundle(PerspectiveCameraBundle {
+            transform: Transform::from_xyz(-2.0, 2.0, 0.0)
+                .looking_at(Vec3::new(0.0, 1.0, 0.0), Vec3::Y),
+            ..default()
+        })
+        .insert(Camera);
+}
+
+fn mouse_motion(
+    mut motion_evr: EventReader<MouseMotion>,
+    mut windows: ResMut<Windows>,
+    mut query: Query<&mut Transform, With<Camera>>,
+) {
+    let mut camera = query.single_mut();
+    let window = windows.get_primary_mut().unwrap();
+    window.set_cursor_lock_mode(true);
+
+    for ev in motion_evr.iter() {
+        let yaw = (ev.delta.x * (-0.2)).to_radians();
+        let pitch = (ev.delta.y * (-0.2)).to_radians();
+
+        let rot = camera.rotation;
+        camera.rotation =
+            Quat::from_axis_angle(Vec3::Y, yaw) * rot * Quat::from_axis_angle(Vec3::X, pitch);
+    }
 }
 
 fn camera_control(
-    input: Res<Input<KeyCode>>, 
+    input: Res<Input<KeyCode>>,
     time: Res<Time>,
-    mut query: Query<&mut Transform, With<Camera>>){
-        for mut transform in query.iter_mut(){
-            let mut direction = Vec3::ZERO;
-            if input.pressed(KeyCode::W){
-                direction.x += 1.0;
-            }
-            if input.pressed(KeyCode::A){
-                direction.z -= 1.0;
-            }
-            if input.pressed(KeyCode::S){
-                direction.x -= 1.0;
-            }
-            if input.pressed(KeyCode::D){
-                direction.z += 1.0;
-            }
-            transform.translation += time.delta_seconds() * 2.0 * direction;
+    mut query: Query<&mut Transform, With<Camera>>,
+) {
+    for mut transform in query.iter_mut() {
+        let mut direction = Vec3::ZERO;
+        if input.pressed(KeyCode::W) {
+            direction.x += 1.0;
         }
+        if input.pressed(KeyCode::A) {
+            direction.z -= 1.0;
+        }
+        if input.pressed(KeyCode::S) {
+            direction.x -= 1.0;
+        }
+        if input.pressed(KeyCode::D) {
+            direction.z += 1.0;
+        }
+        if input.pressed(KeyCode::R) {
+            println!("{:?}", transform.rotation.to_axis_angle());
+            println!("{:?}", transform.forward());
+        }
+
+        transform.translation += time.delta_seconds() * 2.0 * direction;
     }
+}
