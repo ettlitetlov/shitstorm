@@ -1,19 +1,24 @@
 use bevy::input::mouse::MouseMotion;
 use bevy::prelude::*;
 
+pub const BACKGROUND: Color = Color::rgb(0.75, 0.90, 1.0);
+
 fn main() {
     App::new()
-        .insert_resource(ClearColor(Color::rgb(0.75, 0.90, 1.0)))
+        .insert_resource(Msaa { samples: 4 })
+        .insert_resource(ClearColor(BACKGROUND))
         .add_plugins(DefaultPlugins)
         .add_startup_system(setup)
-        .add_system(bevy::input::system::exit_on_esc_system)
+        .add_system(bevy::window::close_on_esc)
         .add_system(camera_control)
         .add_system(mouse_motion)
         .run();
 }
 
 #[derive(Component)]
-struct Camera;
+struct Camera {
+    velocity: Vec3,
+}
 
 /// set up a simple 3D scene
 fn setup(
@@ -55,12 +60,14 @@ fn setup(
 
     // camera
     commands
-        .spawn_bundle(PerspectiveCameraBundle {
+        .spawn_bundle(Camera3dBundle {
             transform: Transform::from_xyz(-2.0, 2.0, 0.0)
                 .looking_at(Vec3::new(0.0, 1.0, 0.0), Vec3::Y),
             ..default()
         })
-        .insert(Camera);
+        .insert(Camera {
+            velocity: Vec3::ZERO,
+        });
 }
 
 fn mouse_motion(
@@ -70,6 +77,10 @@ fn mouse_motion(
 ) {
     let mut camera = query.single_mut();
     let window = windows.get_primary_mut().unwrap();
+
+    // Hide mouse cursor
+    window.set_cursor_visibility(false);
+    
     window.set_cursor_lock_mode(true);
 
     for ev in motion_evr.iter() {
@@ -85,27 +96,44 @@ fn mouse_motion(
 fn camera_control(
     input: Res<Input<KeyCode>>,
     time: Res<Time>,
-    mut query: Query<&mut Transform, With<Camera>>,
+    mut query: Query<(&mut Transform, &mut Camera), With<Camera>>,
 ) {
-    for mut transform in query.iter_mut() {
-        let mut direction = Vec3::ZERO;
-        if input.pressed(KeyCode::W) {
-            direction.x += 1.0;
-        }
-        if input.pressed(KeyCode::A) {
-            direction.z -= 1.0;
-        }
-        if input.pressed(KeyCode::S) {
-            direction.x -= 1.0;
-        }
-        if input.pressed(KeyCode::D) {
-            direction.z += 1.0;
-        }
-        if input.pressed(KeyCode::R) {
-            println!("{:?}", transform.rotation.to_axis_angle());
-            println!("{:?}", transform.forward());
+    for (mut transform, mut camera) in query.iter_mut() {
+        let mut velocity = Vec3::ZERO;
+        let local_z = transform.local_z();
+        let forward = -Vec3::new(local_z.x, 0., local_z.z);
+        let right = Vec3::new(local_z.z, 0., -local_z.x);
+
+        for key in input.get_pressed() {
+            match key {
+                KeyCode::W => velocity += forward,
+                KeyCode::S => velocity -= forward,
+                KeyCode::A => velocity -= right,
+                KeyCode::D => velocity += right,
+                KeyCode::Space => {
+                    if transform.translation.y <= 2.0 {
+                        camera.velocity += Vec3::Y * 150.0;
+                    }
+                }
+                _ => (),
+            }
         }
 
-        transform.translation += time.delta_seconds() * 2.0 * direction;
+        // If we are above ground
+        if transform.translation.y > 2.0 {
+            camera.velocity -= Vec3::Y * (9.80 * (time.delta_seconds() / time.delta_seconds()));
+        }
+
+        velocity = velocity + camera.velocity * time.delta_seconds();
+        transform.translation += velocity * time.delta_seconds() * 5.0;
+
+        // Reset velocity if the ground is reached
+        if transform.translation.y <= 2.0 {
+            camera.velocity = Vec3::ZERO;
+        }
     }
+}
+
+fn is_equal(lhs: f32, rhs: f32) -> bool {
+    return (lhs - rhs).abs() < 0.01;
 }
